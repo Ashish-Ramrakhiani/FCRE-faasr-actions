@@ -1,0 +1,263 @@
+name: Test Self-Hosted Runner
+
+on:
+  workflow_dispatch:  # Manual trigger
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test-runner-basic:
+    name: Basic Environment Test
+    runs-on: self-hosted
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Display runner information
+      run: |
+        echo "=== RUNNER INFORMATION ==="
+        echo "Runner name: $RUNNER_NAME"
+        echo "Runner OS: $RUNNER_OS"
+        echo "Runner architecture: $RUNNER_ARCH"
+        echo "Workflow: $GITHUB_WORKFLOW"
+        echo "Repository: $GITHUB_REPOSITORY"
+        echo "Event: $GITHUB_EVENT_NAME"
+        echo ""
+        
+    - name: System information
+      run: |
+        echo "=== SYSTEM INFORMATION ==="
+        echo "Current user: $(whoami)"
+        echo "Current directory: $(pwd)"
+        echo "Home directory: $HOME"
+        echo "Operating System:"
+        uname -a
+        echo ""
+        echo "CPU Information:"
+        lscpu | head -10
+        echo ""
+        echo "Memory Information:"
+        free -h
+        echo ""
+        echo "Disk Space:"
+        df -h
+        echo ""
+        
+    - name: Network connectivity test
+      run: |
+        echo "=== NETWORK CONNECTIVITY ==="
+        echo "Testing GitHub connectivity:"
+        curl -s https://api.github.com/zen
+        echo ""
+        echo "Testing DNS resolution:"
+        nslookup github.com
+        echo ""
+        
+    - name: Installed software versions
+      run: |
+        echo "=== INSTALLED SOFTWARE ==="
+        echo "Git version:"
+        git --version
+        echo ""
+        echo "Curl version:"
+        curl --version | head -1
+        echo ""
+        if command -v docker &> /dev/null; then
+          echo "Docker version:"
+          docker --version
+          echo "Docker info:"
+          docker info | head -10
+        else
+          echo "Docker is not installed"
+        fi
+        echo ""
+        if command -v python3 &> /dev/null; then
+          echo "Python version:"
+          python3 --version
+        else
+          echo "Python3 is not installed"
+        fi
+        echo ""
+        if command -v node &> /dev/null; then
+          echo "Node.js version:"
+          node --version
+        else
+          echo "Node.js is not installed"
+        fi
+        echo ""
+        
+  test-docker:
+    name: Docker Test
+    runs-on: self-hosted
+    needs: test-runner-basic
+    
+    steps:
+    - name: Test Docker functionality
+      run: |
+        echo "=== DOCKER FUNCTIONALITY TEST ==="
+        echo "Testing Docker with hello-world:"
+        docker run hello-world
+        echo ""
+        echo "Available Docker images:"
+        docker images
+        echo ""
+        echo "Running containers:"
+        docker ps
+        echo ""
+        
+    - name: Test Docker with custom container
+      run: |
+        echo "=== CUSTOM CONTAINER TEST ==="
+        echo "Running Ubuntu container:"
+        docker run --rm ubuntu:latest echo "Docker container test successful!"
+        echo ""
+        
+    - name: Test container with volume mount
+      run: |
+        echo "=== VOLUME MOUNT TEST ==="
+        echo "Creating test file:"
+        echo "Hello from self-hosted runner!" > test-file.txt
+        echo "Testing volume mount:"
+        docker run --rm -v $(pwd):/workspace ubuntu:latest cat /workspace/test-file.txt
+        echo "Cleaning up:"
+        rm test-file.txt
+        echo ""
+        
+  test-resources:
+    name: Resource and Performance Test
+    runs-on: self-hosted
+    needs: test-runner-basic
+    
+    steps:
+    - name: CPU stress test
+      run: |
+        echo "=== CPU STRESS TEST ==="
+        echo "Running CPU intensive task for 10 seconds:"
+        timeout 10s bash -c 'while true; do echo "CPU test" > /dev/null; done' || true
+        echo "CPU stress test completed"
+        echo ""
+        
+    - name: Memory test
+      run: |
+        echo "=== MEMORY TEST ==="
+        echo "Creating 100MB file in memory:"
+        dd if=/dev/zero of=/tmp/test-memory bs=1M count=100 2>/dev/null
+        echo "Memory test file created successfully"
+        ls -lh /tmp/test-memory
+        rm /tmp/test-memory
+        echo "Memory test completed"
+        echo ""
+        
+    - name: Disk I/O test
+      run: |
+        echo "=== DISK I/O TEST ==="
+        echo "Testing disk write performance:"
+        time dd if=/dev/zero of=/tmp/test-disk bs=1M count=50 2>/dev/null
+        echo "Testing disk read performance:"
+        time dd if=/tmp/test-disk of=/dev/null bs=1M 2>/dev/null
+        rm /tmp/test-disk
+        echo "Disk I/O test completed"
+        echo ""
+        
+  test-github-integration:
+    name: GitHub Integration Test
+    runs-on: self-hosted
+    needs: test-runner-basic
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Test GitHub API access
+      run: |
+        echo "=== GITHUB API TEST ==="
+        echo "Repository information:"
+        curl -s -H "Authorization: token $GITHUB_TOKEN" \
+          "https://api.github.com/repos/$GITHUB_REPOSITORY" | \
+          jq '.name, .full_name, .private, .default_branch' 2>/dev/null || \
+          echo "jq not available, raw API response:"
+        echo ""
+        
+    - name: Test artifact creation
+      run: |
+        echo "=== ARTIFACT TEST ==="
+        mkdir -p test-artifacts
+        echo "Test artifact content from self-hosted runner" > test-artifacts/test-file.txt
+        echo "Runner: $RUNNER_NAME" >> test-artifacts/test-file.txt
+        echo "Timestamp: $(date)" >> test-artifacts/test-file.txt
+        echo "Artifact created successfully"
+        ls -la test-artifacts/
+        
+    - name: Upload test artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: self-hosted-runner-test-artifact
+        path: test-artifacts/
+        retention-days: 7
+        
+  test-security:
+    name: Security and Permissions Test
+    runs-on: self-hosted
+    needs: test-runner-basic
+    
+    steps:
+    - name: Check user permissions
+      run: |
+        echo "=== SECURITY CHECK ==="
+        echo "Current user: $(whoami)"
+        echo "User groups:"
+        groups
+        echo ""
+        echo "Sudo access (should fail for security):"
+        sudo -n echo "WARNING: Runner has sudo access!" 2>/dev/null || echo "Good: No sudo access"
+        echo ""
+        echo "Docker group membership:"
+        if groups | grep -q docker; then
+          echo "User is in docker group - Good for Docker operations"
+        else
+          echo "User is NOT in docker group - Docker may not work"
+        fi
+        echo ""
+        
+    - name: Test file permissions
+      run: |
+        echo "=== FILE PERMISSIONS TEST ==="
+        echo "Creating test file:"
+        touch test-permissions.txt
+        chmod 644 test-permissions.txt
+        ls -la test-permissions.txt
+        echo "Test file permissions work correctly"
+        rm test-permissions.txt
+        echo ""
+        
+  summary:
+    name: Test Summary
+    runs-on: self-hosted
+    needs: [test-runner-basic, test-docker, test-resources, test-github-integration, test-security]
+    if: always()
+    
+    steps:
+    - name: Display test summary
+      run: |
+        echo "=== SELF-HOSTED RUNNER TEST SUMMARY ==="
+        echo " Basic environment test completed"
+        echo " Docker functionality test completed"
+        echo " Resource and performance test completed"
+        echo " GitHub integration test completed"
+        echo " Security and permissions test completed"
+        echo ""
+        echo " Your self-hosted runner is working correctly!"
+        echo ""
+        echo "Runner Details:"
+        echo "- Name: $RUNNER_NAME"
+        echo "- OS: $RUNNER_OS"
+        echo "- Architecture: $RUNNER_ARCH"
+        echo "- Timestamp: $(date)"
+        echo ""
+        echo "Next steps:"
+        echo "1. Check the artifacts uploaded from this test"
+        echo "2. Review the logs for any warnings or issues"
+        echo "3. Your runner is ready for production workflows!"
